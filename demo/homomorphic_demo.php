@@ -209,6 +209,7 @@ $companyTotals = calculateCompanyTotals($pdo, $keyManager, $paillier);
             <a href="ecc_demo.php" style="margin-right: 15px; text-decoration: none; color: #007cba;">ECC Encryption</a>
             <strong style="color: #28a745;">Homomorphic Encryption</strong>
             <a href="post_quantum.php" style="margin-left: 15px; text-decoration: none; color: #007cba;">NTRU Post-Quantum Encryption</a>
+            <a href="tls_demo.php" style="margin-left: 15px; text-decoration: none; color: #007cba;">TLS v1.3 Demo</a>
         </nav>
     </div>
     

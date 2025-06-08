@@ -155,6 +155,7 @@ try {
             <a href="ecc_demo.php" style="margin-right: 15px; text-decoration: none; color: #007cba;">ECC Encryption</a>
             <a href="homomorphic_demo.php" style="margin-right: 15px; text-decoration: none; color: #007cba;">Homomorphic Encryption</a>
             <strong style="color: #28a745;">NTRU Post-Quantum Encryption</strong>
+            <a href="tls_demo.php" style="margin-left: 15px; text-decoration: none; color: #007cba;">TLS v1.3 Demo</a>
         </nav>
     </div>
     
