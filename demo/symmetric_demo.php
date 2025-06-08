@@ -31,6 +31,9 @@ try {
 // Function to decrypt data
 function decryptUserData($userData, $username, $method, $keyManager, $aesEncryption, $chachaEncryption) {
     try {
+        // Start timing for decryption speed measurement
+        $startTime = microtime(true);
+        
         // Get the stored key for the specific method
         $keyType = ($method === 'AES-GCM') ? 'aes' : 'chacha';
         $key = $keyManager->getKey($username, $keyType);
@@ -49,14 +52,14 @@ function decryptUserData($userData, $username, $method, $keyManager, $aesEncrypt
                 return null; // Invalid format for AES-GCM
             }
             
-            return [
+            $result = [
                 'name' => $aesEncryption->decrypt($nameParts[0], $key, $ivNonce, $nameParts[1]),
                 'phone_number' => $aesEncryption->decrypt($phoneParts[0], $key, $ivNonce, $phoneParts[1]),
                 'address' => $aesEncryption->decrypt($addressParts[0], $key, $ivNonce, $addressParts[1])
             ];
         } else if ($method === 'CHACHA20') {
             // For ChaCha20, use the ciphertext directly
-            return [
+            $result = [
                 'name' => $chachaEncryption->decrypt($userData['name'], $key, $ivNonce),
                 'phone_number' => $chachaEncryption->decrypt($userData['phone_number'], $key, $ivNonce),
                 'address' => $chachaEncryption->decrypt($userData['address'], $key, $ivNonce)
@@ -64,6 +67,13 @@ function decryptUserData($userData, $username, $method, $keyManager, $aesEncrypt
         } else {
             return null; // Unknown encryption method
         }
+        
+        // End timing and add to result
+        $endTime = microtime(true);
+        $decryptionTime = ($endTime - $startTime) * 1000; // Convert to milliseconds
+        $result['decryption_time'] = $decryptionTime;
+        
+        return $result;
     } catch (Exception $e) {
         // Add error logging for debugging
         error_log("Decryption failed for user $username with method $method: " . $e->getMessage());
@@ -94,11 +104,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'address' => $_POST['address']
             ];
             
+            // Start timing for encryption speed measurement
+            $startTime = microtime(true);
+            
             // Encrypt data
             if ($method === 'AES-GCM') {
                 $encryptedName = $aesEncryption->encrypt($data['name'], $key, $ivNonce);
                 $encryptedPhone = $aesEncryption->encrypt($data['phone_number'], $key, $ivNonce);
                 $encryptedAddress = $aesEncryption->encrypt($data['address'], $key, $ivNonce);
+                
+                // End timing
+                $endTime = microtime(true);
+                $encryptionTime = ($endTime - $startTime) * 1000; // Convert to milliseconds
                 
                 // Store in database - combine ciphertext and tag for AES-GCM
                 $sql = "INSERT INTO personal_data1 (username, name, phone_number, address, encryption_method) 
@@ -117,6 +134,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $encryptedPhone = $chachaEncryption->encrypt($data['phone_number'], $key, $ivNonce);
                 $encryptedAddress = $chachaEncryption->encrypt($data['address'], $key, $ivNonce);
                 
+                // End timing
+                $endTime = microtime(true);
+                $encryptionTime = ($endTime - $startTime) * 1000; // Convert to milliseconds
+                
                 // Store in database
                 $sql = "INSERT INTO personal_data1 (username, name, phone_number, address, encryption_method) 
                        VALUES (?, ?, ?, ?, ?)";
@@ -130,7 +151,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             }
             
-            $message = "Data encrypted and stored successfully using " . $method;
+            $message = sprintf(
+                "Data encrypted and stored successfully using %s (Encryption time: %.2f ms)", 
+                $method, 
+                $encryptionTime
+            );
             
             // Automatically decrypt and display the newly added data
             $decryptedData = $data;
@@ -227,6 +252,9 @@ try {
                 <p><strong>Name:</strong> <?php echo htmlspecialchars($record['decrypted']['name']); ?></p>
                 <p><strong>Phone:</strong> <?php echo htmlspecialchars($record['decrypted']['phone_number']); ?></p>
                 <p><strong>Address:</strong> <?php echo htmlspecialchars($record['decrypted']['address']); ?></p>
+                <?php if (isset($record['decrypted']['decryption_time'])): ?>
+                    <p><strong>Decryption Speed:</strong> <?php echo number_format($record['decrypted']['decryption_time'], 2); ?> ms</p>
+                <?php endif; ?>
             <?php else: ?>
                 <p><em>Unable to decrypt this record - key may be missing</em></p>
             <?php endif; ?>
