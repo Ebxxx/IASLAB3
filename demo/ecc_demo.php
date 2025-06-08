@@ -11,32 +11,21 @@ $keyManager = new KeyManagement();
 $message = '';
 $allRecords = [];
 
-// Check and fix database structure
-try {
-    $sql = "SHOW COLUMNS FROM personal_data2 LIKE 'ephemeral_public_key'";
-    $stmt = $pdo->query($sql);
-    if ($stmt->rowCount() == 0) {
-        // Add the ephemeral_public_key column for ECC
-        $sql = "ALTER TABLE personal_data2 ADD COLUMN ephemeral_public_key TEXT";
-        $pdo->exec($sql);
-        
-        $sql = "ALTER TABLE personal_data2 ADD COLUMN encryption_method VARCHAR(20) DEFAULT 'ECC'";
-        $pdo->exec($sql);
-        
-        $message = "Database updated: Added ECC encryption columns.";
-    }
+// // Check and fix database structure
+// try {
+//     $message = "ECC Demo ready.";
     
-    // Debug: Check key directory
-    $keyDir = dirname(__FILE__) . '/../keys/asymmetric';
-    if (!is_dir($keyDir)) {
-        $message .= " | Key directory created at: " . realpath(dirname($keyDir)) . '/asymmetric';
-    } else {
-        $message .= " | Key directory exists at: " . realpath($keyDir);
-    }
+//     // // Debug: Check key directory
+//     // $keyDir = dirname(__FILE__) . '/../keys/asymmetric';
+//     // if (!is_dir($keyDir)) {
+//     //     $message .= " | Key directory created at: " . realpath(dirname($keyDir)) . '/asymmetric';
+//     // } else {
+//     //     $message .= " | Key directory exists at: " . realpath($keyDir);
+//     // }
     
-} catch (Exception $e) {
-    $message = "Database check failed: " . $e->getMessage();
-}
+// } catch (Exception $e) {
+//     $message = "Database check failed: " . $e->getMessage();
+// }
 
 // Function to decrypt ECC data
 function decryptECCData($userData, $username, $keyManager, $eccEncryption) {
@@ -108,7 +97,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Encrypt each field using ECC
             $encryptedData = [];
-            $ephemeralPublicKey = '';
             
             foreach ($data as $field => $value) {
                 try {
@@ -117,11 +105,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     if (!$package || !isset($package['ephemeral_public_key'])) {
                         throw new Exception("Invalid encryption package for field: $field");
-                    }
-                    
-                    // Store ephemeral public key (same for all fields since same key pair)
-                    if (empty($ephemeralPublicKey)) {
-                        $ephemeralPublicKey = $package['ephemeral_public_key'];
                     }
                     
                     // Store the complete encrypted package (base64 encoded JSON)
@@ -136,17 +119,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $encryptionTime = ($endTime - $startTime) * 1000; // Convert to milliseconds
             
             // Store in database
-            $sql = "INSERT INTO personal_data2 (username, email, date_of_birth, social_security_number, occupation, ephemeral_public_key, encryption_method) 
-                   VALUES (?, ?, ?, ?, ?, ?, ?)";
+            $sql = "INSERT INTO personal_data2 (username, email, date_of_birth, social_security_number, occupation) 
+                   VALUES (?, ?, ?, ?, ?)";
             $stmt = $pdo->prepare($sql);
             $success = $stmt->execute([
                 $_POST['username'],
                 $encryptedData['email'],
                 $encryptedData['date_of_birth'],
                 $encryptedData['social_security_number'],
-                $encryptedData['occupation'],
-                $ephemeralPublicKey,
-                'ECC'
+                $encryptedData['occupation']
             ]);
             
             if (!$success) {
