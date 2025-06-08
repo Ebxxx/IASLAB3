@@ -17,5 +17,14 @@ CREATE TABLE personal_data2 (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB AUTO_INCREMENT=1;
 
+CREATE TABLE personal_data3 (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    credit_card_number TEXT NOT NULL,
+    expiration_date TEXT NOT NULL,
+    cvv TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB AUTO_INCREMENT=1;
+
 
 
