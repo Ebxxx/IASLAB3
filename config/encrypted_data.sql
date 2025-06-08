@@ -7,4 +7,15 @@ CREATE TABLE personal_data1 (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB AUTO_INCREMENT=1;
 
+CREATE TABLE personal_data2 (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    email TEXT NOT NULL,
+    date_of_birth TEXT NOT NULL,
+    social_security_number TEXT NOT NULL,
+    occupation TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB AUTO_INCREMENT=1;
+
+
 

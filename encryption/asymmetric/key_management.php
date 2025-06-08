@@ -7,7 +7,7 @@ class KeyManagement {
     private $ntru;
     private $ecc;
     
-    public function __construct($keyStorePath = '../keys', $cipherMode = 'AES-256-GCM') {
+    public function __construct($keyStorePath = '../../keys/asymmetric') {
         // Convert relative path to absolute path
         if (!str_starts_with($keyStorePath, '/') && !preg_match('/^[A-Za-z]:\\\/', $keyStorePath)) {
             $keyStorePath = __DIR__ . DIRECTORY_SEPARATOR . $keyStorePath;
@@ -15,7 +15,7 @@ class KeyManagement {
         
         $this->keyStorePath = $keyStorePath;
         $this->ntru = new NTRUEncryption();
-        $this->ecc = new ECCEncryption($cipherMode);
+        $this->ecc = new ECCEncryption(); // Simplified - no cipher mode needed
         
         // Create directory with full permissions first
         if (!file_exists($this->keyStorePath)) {
@@ -89,6 +89,27 @@ class KeyManagement {
         }
     }
     
+    public function generateECCKeys($userId) {
+        try {
+            // Generate only ECC key pair
+            $eccKeyPair = $this->ecc->generateKeyPair();
+            
+            // Store ECC keys
+            $this->storeKey($userId, 'ecc_private', $eccKeyPair['private']);
+            $this->storeKey($userId, 'ecc_public', $eccKeyPair['public']);
+            
+            return [
+                'public' => $eccKeyPair['public'],
+                'private' => $eccKeyPair['private']
+            ];
+        } catch (Exception $e) {
+            // Cleanup if storage fails
+            @unlink($this->getKeyPath($userId, 'ecc_private'));
+            @unlink($this->getKeyPath($userId, 'ecc_public'));
+            throw new Exception("Failed to generate ECC keys: " . $e->getMessage());
+        }
+    }
+    
     private function storeKey($userId, $type, $key) {
         $filename = $this->getKeyPath($userId, $type);
         // JSON encode array keys before storing
@@ -130,6 +151,13 @@ class KeyManagement {
         return [
             'public' => $publicKey,
             'private' => $privateKey
+        ];
+    }
+
+    public function checkECCKeys($userId) {
+        return [
+            'private' => file_exists($this->getKeyPath($userId, 'ecc_private')),
+            'public' => file_exists($this->getKeyPath($userId, 'ecc_public'))
         ];
     }
 

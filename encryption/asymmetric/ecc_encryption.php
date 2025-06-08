@@ -1,20 +1,9 @@
 <?php
-require_once __DIR__ . '/../symmetric/aes_gcm.php';
-require_once __DIR__ . '/../symmetric/chacha20.php';
-
 class ECCEncryption {
-    private $cipherMode = 'AES-256-GCM';
-    private $aesGcm;
-    private $chaCha20;
     private $curve = 'prime256v1';
     
-    public function __construct($mode = 'AES-256-GCM') {
-        $allowedModes = ['AES-256-GCM', 'CHACHA20'];
-        if (in_array($mode, $allowedModes)) {
-            $this->cipherMode = $mode;
-        }
-        $this->aesGcm = new AES_GCM_Encryption();
-        $this->chaCha20 = new ChaCha20_Encryption();
+    public function __construct() {
+        // Constructor simplified - no hybrid cipher modes
     }
     
     public function generateKeyPair() {
@@ -22,37 +11,40 @@ class ECCEncryption {
             throw new Exception("OpenSSL extension is not loaded");
         }
 
+        // Try without config first (most reliable)
         $config = array(
-            "config" => "C:/xampp/php/extras/openssl/openssl.cnf",
             "private_key_type" => OPENSSL_KEYTYPE_EC,
             "curve_name" => $this->curve
         );
 
-        $possiblePaths = [
-            "C:/xampp/php/extras/openssl/openssl.cnf",
-            "C:/xampp/apache/conf/openssl.cnf",
-            php_ini_loaded_file() ? dirname(php_ini_loaded_file()) . '/openssl.cnf' : null
-        ];
-
-        foreach ($possiblePaths as $path) {
-            if ($path && file_exists($path)) {
-                $config['config'] = $path;
-                break;
-            }
-        }
-
         $privateKey = openssl_pkey_new($config);
         
+        // If that fails, try with config paths
         if ($privateKey === false) {
-            unset($config['config']);
-            $privateKey = openssl_pkey_new($config);
-            
-            if ($privateKey === false) {
-                throw new Exception("Failed to generate ECC key: " . openssl_error_string());
+            $possiblePaths = [
+                "C:/xampp/php/extras/openssl/openssl.cnf",
+                "C:/xampp/apache/conf/openssl.cnf",
+                "C:/xampp/apache/bin/openssl.cnf",
+                "C:/Program Files/OpenSSL/bin/openssl.cnf",
+                php_ini_loaded_file() ? dirname(php_ini_loaded_file()) . '/openssl.cnf' : null
+            ];
+
+            foreach ($possiblePaths as $path) {
+                if ($path && file_exists($path)) {
+                    $config['config'] = $path;
+                    $privateKey = openssl_pkey_new($config);
+                    if ($privateKey !== false) {
+                        break;
+                    }
+                }
             }
         }
+        
+        if ($privateKey === false) {
+            throw new Exception("Failed to generate ECC key: " . openssl_error_string());
+        }
 
-        if (!openssl_pkey_export($privateKey, $privateKeyPem, null, $config)) {
+        if (!openssl_pkey_export($privateKey, $privateKeyPem, null, isset($config['config']) ? $config : null)) {
             throw new Exception("Failed to export ECC private key: " . openssl_error_string());
         }
 
@@ -66,7 +58,8 @@ class ECCEncryption {
             'public' => $keyDetails['key']
         ];
     }
-// Eliptic Curve Diffie-Hellman (ECDH) implementation
+
+    // Elliptic Curve Diffie-Hellman (ECDH) implementation
     public function deriveSharedSecret($privateKey, $publicKey) {
         $privKey = openssl_pkey_get_private($privateKey);
         if ($privKey === false) {
@@ -83,70 +76,91 @@ class ECCEncryption {
             throw new Exception("Failed to derive ECDH shared secret: " . openssl_error_string());
         }
 
-        return hash('sha256', $sharedSecret, true);
+        // Return raw shared secret for ECC native encryption
+        return $sharedSecret;
     }
     
+    // Native ECC encryption using ECDH-derived key stream
     public function encrypt($data, $recipientPublicKey) {
+        // Generate ephemeral key pair for each encryption
         $ephemeralKeyPair = $this->generateKeyPair();
+        
+        // Derive shared secret using ECDH
         $sharedSecret = $this->deriveSharedSecret($ephemeralKeyPair['private'], $recipientPublicKey);
-        $iv = random_bytes(12);
-
-        switch ($this->cipherMode) {
-            case 'AES-256-GCM':
-                $result = $this->aesGcm->encrypt($data, $sharedSecret, $iv);
+        
+        // Generate encryption key from shared secret
+        $encryptionKey = hash('sha256', $sharedSecret, true);
+        
+        // Generate a unique nonce for this encryption
+        $nonce = random_bytes(16);
+        
+        // Create key stream using HKDF-like expansion
+        $keyStream = $this->generateKeyStream($encryptionKey, $nonce, strlen($data));
+        
+        // XOR the data with the key stream (stream cipher approach)
+        $ciphertext = $data ^ $keyStream;
+        
+        // Create integrity tag using HMAC
+        $tag = hash_hmac('sha256', $ciphertext . $nonce, $encryptionKey, true);
+        
                 $package = [
-                    'mode' => 'AES-256-GCM',
                     'ephemeral_public_key' => base64_encode($ephemeralKeyPair['public']),
-                    'iv' => base64_encode($iv),
-                    'tag' => $result['tag'],
-                    'data' => $result['ciphertext']
+            'nonce' => base64_encode($nonce),
+            'ciphertext' => base64_encode($ciphertext),
+            'tag' => base64_encode($tag)
                 ];
-                break;
-                
-            case 'CHACHA20':
-                $encryptedData = $this->chaCha20->encrypt($data, $sharedSecret, $iv);
-                $package = [
-                    'mode' => 'CHACHA20',
-                    'ephemeral_public_key' => base64_encode($ephemeralKeyPair['public']),
-                    'nonce' => base64_encode($iv),
-                    'data' => $encryptedData
-                ];
-                break;
-        }
         
         return base64_encode(json_encode($package));
     }
     
-    // Decrypt the encrypted data
+    // Native ECC decryption using ECDH-derived key stream
     public function decrypt($encryptedPackage, $recipientPrivateKey) {
         $package = json_decode(base64_decode($encryptedPackage), true);
-        if (!$package || !isset($package['mode'])) {
+        if (!$package || !isset($package['ephemeral_public_key'])) {
             throw new Exception("Invalid encrypted package format");
         }
         
         $ephemeralPublicKey = base64_decode($package['ephemeral_public_key']);
+        $nonce = base64_decode($package['nonce']);
+        $ciphertext = base64_decode($package['ciphertext']);
+        $tag = base64_decode($package['tag']);
+        
+        // Derive the same shared secret using ECDH
         $sharedSecret = $this->deriveSharedSecret($recipientPrivateKey, $ephemeralPublicKey);
 
-        switch ($package['mode']) {
-            case 'AES-256-GCM':
-                $iv = base64_decode($package['iv']);
-                $decryptedData = $this->aesGcm->decrypt($package['data'], $sharedSecret, $iv, $package['tag']);
-                break;
-                
-            case 'CHACHA20':
-                $nonce = base64_decode($package['nonce']);
-                $decryptedData = $this->chaCha20->decrypt($package['data'], $sharedSecret, $nonce);
-                break;
-            
-            default:
-                throw new Exception("Unsupported encryption mode");
+        // Generate the same encryption key
+        $encryptionKey = hash('sha256', $sharedSecret, true);
+        
+        // Verify integrity tag
+        $expectedTag = hash_hmac('sha256', $ciphertext . $nonce, $encryptionKey, true);
+        if (!hash_equals($expectedTag, $tag)) {
+            throw new Exception("Authentication tag verification failed");
         }
         
-        if ($decryptedData === false) {
-            throw new Exception("Failed to decrypt data");
+        // Generate the same key stream
+        $keyStream = $this->generateKeyStream($encryptionKey, $nonce, strlen($ciphertext));
+        
+        // XOR to decrypt
+        $plaintext = $ciphertext ^ $keyStream;
+        
+        return $plaintext;
+    }
+    
+    // Generate key stream for encryption/decryption
+    private function generateKeyStream($key, $nonce, $length) {
+        $keyStream = '';
+        $counter = 0;
+        
+        while (strlen($keyStream) < $length) {
+            // Create a unique block for each iteration
+            $block = $nonce . pack('N', $counter);
+            // Generate pseudorandom bytes using HMAC
+            $keyStream .= hash_hmac('sha256', $block, $key, true);
+            $counter++;
         }
         
-        return $decryptedData;
+        // Return only the needed length
+        return substr($keyStream, 0, $length);
     }
 }
 ?> 
