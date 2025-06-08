@@ -178,7 +178,7 @@ try {
         <h2 style="margin: 0; color: #333;">Encryption Demos</h2>
         <nav style="margin-top: 10px;">
             <a href="chacha&aes_demo.php" style="margin-right: 15px; text-decoration: none; color: #007cba;">AES-GCM & ChaCha20 encryption</a>
-            <strong style="color: #28a745;">ECC Encryption (ECDH)</strong>
+            <strong style="color: #28a745;">ECC Encryption</strong>
             <a href="post_quantum.php" style="margin-left: 15px; text-decoration: none; color: #007cba;">NTRU Post-Quantum Encryption</a>
         </nav>
     </div>
