@@ -174,6 +174,15 @@ try {
     <title>ECC Encryption Demo</title>
 </head>
 <body>
+    <div style="background-color: #f8f9fa; padding: 10px; margin-bottom: 20px; border-bottom: 2px solid #ddd;">
+        <h2 style="margin: 0; color: #333;">Encryption Demos</h2>
+        <nav style="margin-top: 10px;">
+            <a href="chacha&aes_demo.php" style="margin-right: 15px; text-decoration: none; color: #007cba;">AES-GCM & ChaCha20 encryption</a>
+            <strong style="color: #28a745;">ECC Encryption (ECDH)</strong>
+            <a href="post_quantum.php" style="margin-left: 15px; text-decoration: none; color: #007cba;">NTRU Post-Quantum Encryption</a>
+        </nav>
+    </div>
+    
     <h1>ECC Encryption Demo</h1>
     
     <?php if ($message): ?>
