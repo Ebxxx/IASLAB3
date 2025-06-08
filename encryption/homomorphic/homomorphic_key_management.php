@@ -9,7 +9,7 @@ class HomomorphicKeyManagement {
     private function __construct($keyStorePath = null) {
         // If no path provided, create keys directory in the root of the project
         if ($keyStorePath === null) {
-            $keyStorePath = __DIR__ . '/../../keys';
+            $keyStorePath = __DIR__ . '/../../keys/asymmetric';
         }
         
         $this->keyStorePath = $keyStorePath;

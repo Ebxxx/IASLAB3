@@ -27,4 +27,15 @@ CREATE TABLE personal_data3 (
 ) ENGINE=InnoDB AUTO_INCREMENT=1;
 
 
+CREATE TABLE payroll_data (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    employee_name VARCHAR(50) NOT NULL UNIQUE,
+    base_salary TEXT NOT NULL,
+    bonus TEXT NOT NULL,
+    tax_rate TEXT NOT NULL,
+    encrypted_total TEXT,
+    encryption_method VARCHAR(50) DEFAULT 'homomorphic'
+) ENGINE=InnoDB AUTO_INCREMENT=1;
+
+
 
