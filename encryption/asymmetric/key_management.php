@@ -1,6 +1,6 @@
 <?php
-require_once 'asymmetric/ntru_encryption.php';
-require_once 'asymmetric/ecc_encryption.php';
+require_once 'ntru_encryption.php';
+require_once 'ecc_encryption.php';
 
 class KeyManagement {
     private $keyStorePath;

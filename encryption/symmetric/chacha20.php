@@ -1,6 +1,4 @@
 <?php
-// This code is implemented but not yet integrated with the advanced asymetric encryiption.
-// This is a symetric ecnryption.
 class ChaCha20_Encryption {
     public function encrypt($plaintext, $key, $nonce) {
         if (strlen($key) !== 32) {
@@ -9,7 +7,9 @@ class ChaCha20_Encryption {
         if (strlen($nonce) !== 12) {
             throw new Exception("Nonce must be 12 bytes long.");
         }
-        $ciphertext = openssl_encrypt($plaintext, 'chacha20', $key, OPENSSL_RAW_DATA, $nonce);
+        // Pad nonce to 16 bytes for OpenSSL ChaCha20
+        $paddedNonce = str_pad($nonce, 16, "\0");
+        $ciphertext = openssl_encrypt($plaintext, 'chacha20', $key, OPENSSL_RAW_DATA, $paddedNonce);
         return base64_encode($ciphertext);
     }
 
@@ -20,8 +20,10 @@ class ChaCha20_Encryption {
         if (strlen($nonce) !== 12) {
             throw new Exception("Nonce must be 12 bytes long.");
         }
+        // Pad nonce to 16 bytes for OpenSSL ChaCha20
+        $paddedNonce = str_pad($nonce, 16, "\0");
         $ciphertext = base64_decode($ciphertext);
-        return openssl_decrypt($ciphertext, 'chacha20', $key, OPENSSL_RAW_DATA, $nonce);
+        return openssl_decrypt($ciphertext, 'chacha20', $key, OPENSSL_RAW_DATA, $paddedNonce);
     }
 }
 ?> 
