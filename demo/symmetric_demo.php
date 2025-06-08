@@ -14,33 +14,59 @@ $message = '';
 $decryptedData = null;
 $allRecords = [];
 
+// Check and fix database structure
+try {
+    $sql = "SHOW COLUMNS FROM personal_data1 LIKE 'encryption_method'";
+    $stmt = $pdo->query($sql);
+    if ($stmt->rowCount() == 0) {
+        // Add the encryption_method column
+        $sql = "ALTER TABLE personal_data1 ADD COLUMN encryption_method VARCHAR(20)";
+        $pdo->exec($sql);
+        $message = "Database updated: Added encryption_method column.";
+    }
+} catch (Exception $e) {
+    $message = "Database check failed: " . $e->getMessage();
+}
+
 // Function to decrypt data
 function decryptUserData($userData, $username, $method, $keyManager, $aesEncryption, $chachaEncryption) {
     try {
-        // Get the stored key
-        $key = $keyManager->getKey($username, $method === 'AES-GCM' ? 'aes' : 'chacha');
+        // Get the stored key for the specific method
+        $keyType = ($method === 'AES-GCM') ? 'aes' : 'chacha';
+        $key = $keyManager->getKey($username, $keyType);
         
         // Use a consistent IV/nonce derived from the username and key (12 bytes)
         $ivNonce = substr(hash('sha256', $username . base64_encode($key), true), 0, 12);
         
-        // Decrypt data
+        // Decrypt data based on the method used
         if ($method === 'AES-GCM') {
-            // For AES-GCM, we need to handle the authentication tag
-            $tag = substr(hash('sha256', $userData['name'], true), 0, 16);
+            // For AES-GCM, extract ciphertext and tag
+            $nameParts = explode('::', $userData['name']);
+            $phoneParts = explode('::', $userData['phone_number']);
+            $addressParts = explode('::', $userData['address']);
+            
+            if (count($nameParts) != 2 || count($phoneParts) != 2 || count($addressParts) != 2) {
+                return null; // Invalid format for AES-GCM
+            }
             
             return [
-                'name' => $aesEncryption->decrypt($userData['name'], $key, $ivNonce, $tag),
-                'phone_number' => $aesEncryption->decrypt($userData['phone_number'], $key, $ivNonce, $tag),
-                'address' => $aesEncryption->decrypt($userData['address'], $key, $ivNonce, $tag)
+                'name' => $aesEncryption->decrypt($nameParts[0], $key, $ivNonce, $nameParts[1]),
+                'phone_number' => $aesEncryption->decrypt($phoneParts[0], $key, $ivNonce, $phoneParts[1]),
+                'address' => $aesEncryption->decrypt($addressParts[0], $key, $ivNonce, $addressParts[1])
             ];
-        } else {
+        } else if ($method === 'CHACHA20') {
+            // For ChaCha20, use the ciphertext directly
             return [
                 'name' => $chachaEncryption->decrypt($userData['name'], $key, $ivNonce),
                 'phone_number' => $chachaEncryption->decrypt($userData['phone_number'], $key, $ivNonce),
                 'address' => $chachaEncryption->decrypt($userData['address'], $key, $ivNonce)
             ];
+        } else {
+            return null; // Unknown encryption method
         }
     } catch (Exception $e) {
+        // Add error logging for debugging
+        error_log("Decryption failed for user $username with method $method: " . $e->getMessage());
         return null;
     }
 }
@@ -58,8 +84,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Get the key for the selected method
             $key = base64_decode($keys[$keyType]);
             
-            // Generate IV/nonce (12 bytes as required by both encryption classes)
-            $ivNonce = random_bytes(12);
+            // Generate consistent IV/nonce derived from username and key (12 bytes)
+            $ivNonce = substr(hash('sha256', $_POST['username'] . base64_encode($key), true), 0, 12);
             
             // Prepare data for encryption
             $data = [
@@ -74,15 +100,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $encryptedPhone = $aesEncryption->encrypt($data['phone_number'], $key, $ivNonce);
                 $encryptedAddress = $aesEncryption->encrypt($data['address'], $key, $ivNonce);
                 
-                // Store in database
-                $sql = "INSERT INTO personal_data1 (username, name, phone_number, address) 
-                       VALUES (?, ?, ?, ?)";
+                // Store in database - combine ciphertext and tag for AES-GCM
+                $sql = "INSERT INTO personal_data1 (username, name, phone_number, address, encryption_method) 
+                       VALUES (?, ?, ?, ?, ?)";
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute([
                     $_POST['username'],
-                    $encryptedName['ciphertext'],
-                    $encryptedPhone['ciphertext'],
-                    $encryptedAddress['ciphertext']
+                    $encryptedName['ciphertext'] . '::' . $encryptedName['tag'],
+                    $encryptedPhone['ciphertext'] . '::' . $encryptedPhone['tag'],
+                    $encryptedAddress['ciphertext'] . '::' . $encryptedAddress['tag'],
+                    'AES-GCM'
                 ]);
                 
             } else {
@@ -91,14 +118,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $encryptedAddress = $chachaEncryption->encrypt($data['address'], $key, $ivNonce);
                 
                 // Store in database
-                $sql = "INSERT INTO personal_data1 (username, name, phone_number, address) 
-                       VALUES (?, ?, ?, ?)";
+                $sql = "INSERT INTO personal_data1 (username, name, phone_number, address, encryption_method) 
+                       VALUES (?, ?, ?, ?, ?)";
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute([
                     $_POST['username'],
                     $encryptedName,
                     $encryptedPhone,
-                    $encryptedAddress
+                    $encryptedAddress,
+                    'CHACHA20'
                 ]);
             }
             
@@ -117,15 +145,14 @@ try {
     $sql = "SELECT * FROM personal_data1 ORDER BY created_at DESC";
     $stmt = $pdo->query($sql);
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        // Try both encryption methods
-        $decrypted = decryptUserData($row, $row['username'], 'AES-GCM', $keyManager, $aesEncryption, $chachaEncryption);
-        if (!$decrypted) {
-            $decrypted = decryptUserData($row, $row['username'], 'CHACHA20', $keyManager, $aesEncryption, $chachaEncryption);
-        }
+        // Use the stored encryption method to decrypt with the correct key
+        $encryptionMethod = isset($row['encryption_method']) ? $row['encryption_method'] : 'AES-GCM'; // Default for old records
+        $decrypted = decryptUserData($row, $row['username'], $encryptionMethod, $keyManager, $aesEncryption, $chachaEncryption);
         
         $allRecords[] = [
             'id' => $row['id'],
             'username' => $row['username'],
+            'encryption_method' => $encryptionMethod,
             'encrypted' => $row,
             'decrypted' => $decrypted,
             'created_at' => $row['created_at']
@@ -192,6 +219,7 @@ try {
         <div style="margin-bottom: 20px; border-bottom: 1px solid #ccc; padding-bottom: 10px;">
             <h3>Record #<?php echo htmlspecialchars($record['id']); ?></h3>
             <p><strong>Username:</strong> <?php echo htmlspecialchars($record['username']); ?></p>
+            <p><strong>Encryption Method:</strong> <?php echo htmlspecialchars($record['encryption_method']); ?></p>
             <p><strong>Created:</strong> <?php echo htmlspecialchars($record['created_at']); ?></p>
             
             <?php if ($record['decrypted']): ?>
@@ -200,7 +228,7 @@ try {
                 <p><strong>Phone:</strong> <?php echo htmlspecialchars($record['decrypted']['phone_number']); ?></p>
                 <p><strong>Address:</strong> <?php echo htmlspecialchars($record['decrypted']['address']); ?></p>
             <?php else: ?>
-                <p><em>Unable to decrypt this record</em></p>
+                <p><em>Unable to decrypt this record - key may be missing</em></p>
             <?php endif; ?>
         </div>
     <?php endforeach; ?>
